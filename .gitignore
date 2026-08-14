@@ -1,0 +1,13 @@
+data/raw/
+data/interim/
+data/processed/
+figures/
+reports/
+results/*
+!results/tables/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/

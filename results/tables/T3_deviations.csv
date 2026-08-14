@@ -1,0 +1,5 @@
+parameter,paper,ours,reason,expected_impact
+implementation_language,MATLAB 2021b,Python 3.10,No MATLAB licence; CODA repo is MATLAB. Algorithms reimplemented.,Numerical differences at the level of interpolation order.
+registration.translation_from,cross_correlation_of_rotated_images,phase_cross_correlation,Subpixel accuracy and robustness to intensity differences between sections.,Equal or better translation accuracy; verify with TRE.
+segmentation.architecture,deeplab_v3_plus,deeplab_v3_plus_if_smp_else_v3,"torchvision ships v3, not v3+. smp provides true v3+.",v3 lacks the decoder; boundary detail is coarser.
+cell_detection.nuclei_from,smoothed_hematoxylin_2d_intensity_minima,distance_transform_watershed,Equivalent formulation with standard tooling.,Validate against manual counts at the 2 um radius before use.

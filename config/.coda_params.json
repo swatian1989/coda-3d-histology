@@ -1,0 +1,203 @@
+{
+  "acquisition": {
+    "axial_resolution_um": 4,
+    "axial_resolution_used_um": 12,
+    "he_stain_interval": 3,
+    "held_out_sections": 2,
+    "lateral_resolution_um": 0.5,
+    "scan_magnification": 20,
+    "section_thickness_um": 4
+  },
+  "cell_detection": {
+    "acceptance_precision": 0.9,
+    "acceptance_recall": 0.9,
+    "assignment": "one_to_one",
+    "background_od": "inverse_of_mean_of_h_and_e",
+    "color_space": "optical_density",
+    "eosin_selection": "most_common_red_favored_od",
+    "hematoxylin_selection": "most_common_blue_favored_od",
+    "kmeans_clusters": 100,
+    "match_radius_um": 2.0,
+    "n_annotators": 2,
+    "n_validation_regions": 5,
+    "nuclei_from": "smoothed_hematoxylin_2d_intensity_minima",
+    "seconds_per_wsi": 90,
+    "tissue_mask_rule": "low_green_intensity_and_high_rgb_std",
+    "validation_regions_mm2": 1.5,
+    "working_mpp": 2.0
+  },
+  "connectivity": {
+    "computed_on": [
+      "precursors_alone",
+      "precursors_plus_normal_ductal_epithelium"
+    ],
+    "method": "bwlabeln",
+    "morphology_metric": "regionprops3_primary_axis_length",
+    "reported_overcounting_max_fold": 40,
+    "reported_overcounting_mean_fold": 12.3,
+    "reported_p_value": "1e-5"
+  },
+  "fiber_alignment": {
+    "alignment_index_range": [
+      0,
+      1
+    ],
+    "axial_coordinates_per_structure": 3,
+    "crop_magnification": 20,
+    "images_per_structure_type": 42,
+    "locations_per_crop": 2,
+    "longitudinal_coordinates_per_structure": 3,
+    "n_samples": 7,
+    "nuclear_aspect_ratio_annotators": 2,
+    "nuclear_aspect_ratio_cells_per_image": 5,
+    "reported_fold_change_alignment": [
+      2.5,
+      2.4,
+      2.2,
+      2.2
+    ],
+    "reported_fold_change_aspect_ratio": [
+      2.1,
+      2.3,
+      2.5
+    ],
+    "source_channel": "eosin",
+    "structures": [
+      "ductal_epithelium",
+      "blood_vessels",
+      "nerves"
+    ],
+    "total_cells_measured": 1260,
+    "window_area_um2": 2500
+  },
+  "quantification": {
+    "bulk_density": "subtype_3d_count_over_total_tissue_volume",
+    "cell_count_formula": "C3D = sum_images sum_subtypes C_image * 3T / (T + D_subtype)",
+    "composition_denominator": "tissue_voxels_only",
+    "effective_thickness": "section_thickness_plus_nuclear_diameter",
+    "local_density": "subtype_3d_count_over_subtype_volume",
+    "nuclear_diameters_um": {
+      "acini": 4.0,
+      "ductal_epithelium": 4.2,
+      "ecm": 2.5,
+      "fat": 70.0,
+      "islets": 3.4,
+      "panin": 5.5,
+      "pdac": 6.7,
+      "smooth_muscle": 4.1
+    },
+    "nuclei_measured_per_subtype": 100
+  },
+  "reconstruction": {
+    "isotropic_voxel_um": [
+      12,
+      12,
+      12
+    ],
+    "original_voxel_um": [
+      2,
+      2,
+      12
+    ],
+    "resample_interp": "nearest",
+    "voxel_volume_mm3": 1.728e-06,
+    "xy_render_mpp": 2.0,
+    "z_spacing_um": 12
+  },
+  "registration": {
+    "angle_from": "cross_correlation_of_radon_transforms",
+    "candidate_selection": "pixel_to_pixel_correlation",
+    "discard_badly_deformed": true,
+    "downsample_interp": "nearest",
+    "elastic_field_mpp": 8.0,
+    "elastic_tile_interval_um": 1500,
+    "field_smoothing_sigma_px": 2,
+    "n_radon_angles": 360,
+    "n_reference_candidates": 3,
+    "radon_angles_deg": [
+      0,
+      359
+    ],
+    "reference": "center_image",
+    "registration_mpp": 80.0,
+    "translation_from": "cross_correlation_of_rotated_images",
+    "working_mpp": 8.0
+  },
+  "registration_qc": {
+    "benchmark_dataset": "260_mouse_prostate_serial_images",
+    "benchmark_metrics": [
+      "TRE",
+      "ATRE",
+      "RMSE",
+      "Jaccard",
+      "dA"
+    ],
+    "correlation_metric": "spearman",
+    "expected_correlation_retained": 0.95,
+    "expected_error_at_12um": 0.05,
+    "max_distance_mm": 0.3,
+    "reference_ceiling": "xy_longitudinal_correlation",
+    "sampling_interval_um": 4
+  },
+  "segmentation": {
+    "acceptance_precision": 0.9,
+    "acceptance_recall": 0.9,
+    "annotation_images_per_sample": 7,
+    "annotation_tool": "aperio_imagescope_xml",
+    "annotations_per_class": 50,
+    "architecture": "deeplab_v3_plus",
+    "augment_hue_per_channel": [
+      0.8,
+      1.2
+    ],
+    "augment_rotation": true,
+    "augment_scale": [
+      0.8,
+      1.2
+    ],
+    "backbone": "resnet50",
+    "big_tile_channels": 3,
+    "big_tile_px": 9000,
+    "class_balance": "approximately_equal_pixels_per_class",
+    "fill_fraction": 0.65,
+    "n_test_tiles": 324,
+    "n_train_big_tiles": 20,
+    "n_train_tiles": 6480,
+    "n_val_big_tiles": 5,
+    "n_val_tiles": 1620,
+    "nerve_model_pooling": [
+      "smooth_muscle",
+      "collagen",
+      "other_tissue",
+      "white"
+    ],
+    "nerve_supersedes_previous_label": true,
+    "on_failure": "add_annotations_and_retrain",
+    "overlay_order": "least_represented_class_first",
+    "pancreas_classes": [
+      "normal_ductal_epithelium",
+      "precursors",
+      "pdac",
+      "smooth_muscle",
+      "acini",
+      "fat",
+      "collagen",
+      "islets_of_langerhans",
+      "lymph_nodes"
+    ],
+    "small_tile_px": 500,
+    "stain_normalisation": "to_reference_od_of_same_case",
+    "tiles_per_big_tile": 324,
+    "validation_patience": 5,
+    "working_mpp": 2.0
+  },
+  "statistics": {
+    "data_excluded": "none",
+    "sample_size_predetermined": false,
+    "test": "wilcoxon_rank_sum"
+  },
+  "z_projection": {
+    "normalisation": "divide_by_max",
+    "operation": "sum_along_z"
+  }
+}

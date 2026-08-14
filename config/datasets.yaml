@@ -1,0 +1,192 @@
+# Public datasets that let the FULL CODA pipeline run without cutting anything.
+
+# ============================================================ 3D ARM
+# The only public serial-section stacks. CODA itself benchmarked its
+# registration on this data (Kartasalo et al. 2018), and VALIS did too.
+
+kartasalo_serial:
+  role: FULL_CODA_3D               # registration -> segmentation -> reconstruction
+  citation: "Kartasalo K et al. Comparative analysis of tissue reconstruction algorithms for 3D histology. Bioinformatics 2018;34:3013"
+  benchmark_code: "https://github.com/BioimageInformaticsTampere/RegBenchmark"
+  datasets:
+    mouse_prostate:
+      n_sections: 260              # serially sliced, H&E
+      magnification: 20x
+      mpp: 0.46
+      section_thickness_um: 5
+      landmarks: "fiducial points on structures visible in both slices, preferentially nuclei split by the sectioning blade"
+    mouse_liver:
+      n_sections: 47
+      mpp: 0.46
+      section_thickness_um: 5
+      validation: "laser-cut holes through the whole tissue, which should form a straight line after correct alignment"
+  why_this_matters: |
+    This is the dataset CODA used for its own registration comparison against
+    seven other methods. Running the full pipeline on it means your results are
+    directly comparable to the published benchmark, and the fiducials give you
+    TRE and ATRE without any manual annotation of your own.
+  limitation: "Mouse, not human. Prostate and liver, not breast. It proves the pipeline, not a breast finding."
+
+# ============================================================ 2D BREAST ARM
+# The public twin of the USM dataset: same four markers, same tumour block.
+
+acrobat:
+  role: BREAST_H&E_IHC_REGISTRATION_AND_2D
+  citation: "Weitz P et al. The ACROBAT 2022 challenge. Med Image Anal 2024"
+  data: "https://researchdata.se/en/catalogue/dataset/2022-190-1"
+  challenge: "https://acrobat.grand-challenge.org"
+  n_wsi: 4212
+  n_patients: 1153
+  stains: [H&E, ER, PGR, HER2, KI67]     # EXACTLY the USM marker panel
+  landmarks: 37208                        # manually annotated correspondences
+  mpp_released: 0.92                      # 10x, downscaled from 40x
+  native_mpp: 0.23
+  scanners: [NanoZoomer S360, NanoZoomer XR, NanoZoomer XR]
+  source: "CHIME study, Sodersjukhuset Stockholm, routine diagnostic workflow"
+  CRITICAL_LIMITATION: |
+    All WSIs of a case come from the same tumour block, but the sections are
+    NOT NECESSARILY CONSECUTIVE. So ACROBAT supports H&E-to-IHC registration
+    and every 2D measurement, but NOT 3D reconstruction. Do not attempt to
+    stack ACROBAT sections into a volume.
+  why_this_matters: |
+    ACROBAT is the public twin of the USM cohort: breast, routine diagnostics,
+    the same four markers, one H&E per case. Develop and validate the entire
+    2D pipeline here first, using the 37,208 landmarks to verify registration
+    accuracy objectively. Then apply the validated pipeline to the Malaysian
+    slides. That sequence also makes the Malaysia-vs-elsewhere comparison much
+    stronger, because ACROBAT (Sweden) becomes a second comparison cohort
+    alongside TCGA (USA).
+
+anhir:
+  role: SECONDARY_REGISTRATION_VALIDATION
+  citation: "ANHIR: Automatic Non-rigid Histological Image Registration challenge"
+  note: "Serial sections across several tissue types, including a subset of ~30 breast pairs with HER2, ER and PgR."
+
+# ============================================================ COMPARISON COHORTS
+
+tcga_brca:
+  role: h_and_e_comparison_only
+  n_slides: "~1100 diagnostic (DX) FFPE"
+  source: "https://portal.gdc.cancer.gov"
+  warning: "H&E only. Never compare USM IHC against TCGA H&E; the difference measured would be the stain."
+
+usm_malaysia:
+  role: primary_cohort
+  has: [scanned H&E, 200+ scanned IHC across ER/PR/HER2/Ki67, clinical data]
+  supports: [2D histomorphometry, H&E-IHC registration, IHC spatial heterogeneity, cohort comparison]
+  does_not_support: [3D reconstruction]
+  reason: "Four markers across many patients is breadth, not depth. 3D needs 100+ consecutive sections through ONE block."
+
+# ============================================================ SUGGESTED SEQUENCE
+#
+# 1. Kartasalo mouse prostate  -> full CODA 3D, benchmarked against published TRE/ATRE
+# 2. ACROBAT breast            -> full CODA 2D + H&E-to-IHC registration, validated on 37,208 landmarks
+# 3. USM Malaysia              -> apply both validated pipelines
+# 4. TCGA + ACROBAT            -> two independent comparison cohorts for the Malaysian arm
+#
+# Only step 3 needs ethics. Steps 1, 2 and 4 are public and can start today.
+
+# ============================================================ 3D-CAPABLE PUBLIC DATASETS
+#
+# THE ONLY CRITERION THAT MATTERS IS STACK DEPTH.
+#
+# A pair of consecutive sections is not a volume. Registration challenges
+# publish PAIRS, which is what they need to score registration accuracy, and a
+# pair supports exactly one z-step. CODA needs tens to hundreds of consecutive
+# sections through ONE specimen before connectivity, volume and 3D morphology
+# mean anything.
+#
+# So for every candidate below, the question is not "does it have serial
+# sections" but "how many consecutive sections through the SAME block".
+# Verify that number before downloading anything large.
+
+kartasalo_serial:
+  stack_depth: 260 (prostate) / 47 (liver)
+  verdict: FULL_3D                      # deepest public stack found
+  species: mouse
+  tissue: [prostate, liver]
+  mpp: 0.46
+  section_um: 5
+  ground_truth: "operator-marked fiducials; liver has laser-cut holes through the whole tissue that must form a straight line after correct alignment"
+  access: "https://github.com/BioimageInformaticsTampere/RegBenchmark"
+  why: "CODA benchmarked its own registration on this against seven methods. Your TRE and ATRE land on a published scale."
+
+colon_pancreas_serial:
+  stack_depth: 168 images (colon + pancreas combined; CONFIRM per-specimen depth)
+  verdict: LIKELY_FULL_3D               # verify depth before committing
+  species: human
+  tissue: [colon, pancreas]
+  capture: "light microscope at several magnifications, NOT whole slide imaging"
+  source: "Dept of Pathology, North Bengal Medical College, Siliguri. Published 2024."
+  caveats: |
+    Light-microscope captures rather than WSI, so expect field-of-view images
+    with the same constraints as the USM IHC set: limited extent, possible
+    burned-in scale bars, mixed magnifications. Confirm how many CONSECUTIVE
+    sections come from a single specimen before planning a reconstruction.
+    168 split across two organs and several magnifications may be far fewer
+    than 168 per stack.
+
+hyreco:
+  stack_depth: 86 slide PAIRS
+  verdict: NOT_3D                       # pairs only
+  n_landmarks: 5404
+  why_still_useful: |
+    HyReCo contains RESTAINED sections: the same physical section destained and
+    restained, so cell correspondence is exact. Published registration error is
+    0.9 to 2.2 um for restained versus 6.5 um for consecutive. That makes it the
+    right dataset for validating your registration at CELL level, which
+    consecutive sections can never do because the cells genuinely differ
+    between sections.
+
+anhir:
+  stack_depth: 230 consecutive slide PAIRS across 8 tissue types
+  verdict: NOT_3D                       # pairs, not stacks
+  tissues: [lung lesions, mouse lung lobes, mammary gland, mouse kidney,
+            colon adenocarcinoma, gastric mucosa, human breast, human kidney]
+  n_stains: 18
+  published_tre: "median 24.1 um between consecutive sections"
+  why_still_useful: |
+    Includes HUMAN BREAST and mammary gland with 18 stains. Excellent for
+    validating multi-stain registration on breast tissue, and the published
+    median TRE gives you a number to beat. Not a volume.
+
+acrobat:
+  stack_depth: 1 H&E + 4 IHC per case, same block, NOT necessarily consecutive
+  verdict: NOT_3D
+  why_still_useful: "1,153 breast patients, your exact marker panel, 37,208 landmarks."
+
+map3d_renal:
+  stack_depth: "serial renal sections; CONFIRM depth"
+  verdict: CHECK
+  note: "Built for tracking 3D glomerular structures across serial renal sections, which implies real stack depth. Worth checking."
+
+zeroreg3d:
+  stack_depth: "mouse whole kidney sections and human needle biopsy sections"
+  verdict: CHECK
+  code: "https://github.com/hrlblab/ZeroReg3D"
+  note: |
+    Open-source 3D reconstruction pipeline for consecutive histopathology.
+    Human needle biopsy sections are directly relevant in format to breast core
+    biopsies. Check whether the evaluation data is released alongside the code.
+
+coda_original:
+  stack_depth: 4114 sections across 13 human pancreas samples
+  verdict: FULL_3D_HUMAN                # the best option if granted
+  access: "Data available upon request from the corresponding author"
+  contacts: [wirtz@jhu.edu, pwu@jhu.edu]
+  why: |
+    Human tissue, the actual CODA data, with a published result to reproduce
+    against exactly. Costs one email. Send it in parallel with everything else;
+    a granted request beats every other option on this list.
+
+# ---------------------------------------------------------------- SUMMARY
+#
+#   TRUE 3D today, free:        kartasalo_serial
+#   TRUE 3D, human, one email:  coda_original
+#   TRUE 3D, human, verify:     colon_pancreas_serial, map3d_renal, zeroreg3d
+#   Registration validation:    hyreco (cell-level), anhir (breast, multi-stain)
+#   Breast markers, 2D:         acrobat
+#
+# Before downloading any large dataset, answer one question: how many
+# CONSECUTIVE sections come from a single specimen? If the answer is under
+# about 20, it is a registration dataset, not a 3D dataset.
