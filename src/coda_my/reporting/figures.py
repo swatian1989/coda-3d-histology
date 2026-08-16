@@ -765,7 +765,16 @@ def f23_stereological_correction(figdir: str) -> dict:
                    "results/usm_3d_extrapolation.csv", "Arm C 3D",
                    figdir, "F23_stereological")
     meta = json.loads(mp.read_text())
-    D_pos = meta["measured_diameter_positive_um"]
+    # Prefer the Fullman-corrected true diameter when the stereology step has
+    # run. The raw profile diameter is what a section shows, not what a nucleus
+    # is, and using it as D inflates every volumetric density by about 15%.
+    st = KART.parent / "usm_stereology_3d_meta.json"
+    if st.exists():
+        _s = json.loads(st.read_text())
+        D_pos = _s["true_diameter_fullman_um"]
+        meta["_corrected"] = _s
+    else:
+        D_pos = meta["measured_diameter_positive_um"]
     T = meta["section_thickness_um_ASSUMED"]
     f_pos = meta["correction_factor_positive"]
 

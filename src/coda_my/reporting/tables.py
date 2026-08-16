@@ -7,6 +7,7 @@ naming the missing input, so nothing is silently dropped.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -424,7 +425,12 @@ def t15_stereological_correction(tdir: str) -> dict:
                    tdir, "T15_stereological")
     ex = pd.read_csv(p)
     meta = json.loads(mp.read_text())
-    T, D = meta["section_thickness_um_ASSUMED"], meta["measured_diameter_positive_um"]
+    T = meta["section_thickness_um_ASSUMED"]
+    _st = ROOT / "results/usm_stereology_3d_meta.json"
+    if _st.exists():
+        D = json.loads(_st.read_text())["true_diameter_fullman_um"]
+    else:
+        D = meta["measured_diameter_positive_um"]
 
     rows = []
     for m, g in ex.groupby("marker"):
