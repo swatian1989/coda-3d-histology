@@ -947,6 +947,99 @@ def f24_published_benchmark(figdir: str) -> dict:
                        "before any comparison is drawn."
                        % (rank, len(auto) + 1, len(auto) - rank + 1, len(auto))}
 
+
+
+# ============ F25-F28  Extended Data figures, in the published panel layout
+
+
+def _ed(fid: str, stem: str, title: str, caption: str, figdir: str) -> dict:
+    """Expose an Extended Data figure to the report.
+
+    These are produced by scripts/make_extended_data_figures.py, which lays them
+    out panel for panel against the published Extended Data figures. They are
+    referenced here rather than redrawn so that the report and the standalone
+    figure files can never drift apart.
+    """
+    src = ROOT / "figures/extended_data" / f"{stem}.png"
+    if not src.exists():
+        return _ph(fid, title, "run scripts/make_extended_data_figures.py",
+                   "Extended Data layout", figdir, f"{fid}_{stem}")
+    dst_dir = Path(figdir); dst_dir.mkdir(parents=True, exist_ok=True)
+    import shutil
+    paths = {}
+    for ext in ("png", "pdf"):
+        s = ROOT / "figures/extended_data" / f"{stem}.{ext}"
+        if s.exists():
+            d = dst_dir / f"{fid}_{stem}.{ext}"
+            shutil.copyfile(s, d)
+            paths[ext] = str(d)
+    return {"id": fid, "title": title,
+            "source": "REAL (Kartasalo mouse liver, n=47 serial sections)",
+            "paths": paths, "caption": caption}
+
+
+def f25_ed_registration_workflow(figdir):
+    return _ed("F25", "A1_registration_workflow",
+               "Extended Data layout: registration workflow",
+               "The registration workflow reproduced panel for panel against the "
+               "published Extended Data figure. Sections are registered outward from "
+               "the centre. The fixed and moving pair are greyscaled, background "
+               "removed, complemented and Gaussian filtered. The Radon transform over "
+               "0 to 360 degrees and the 2D cross correlation surface are both shown, "
+               "although rotation here is recovered by direct search rather than from "
+               "the Radon transform, because Radon estimation averaged 37.5 degrees of "
+               "error on this tissue. Local registration uses tiles at 1.5 mm "
+               "intervals, interpolated to whole-image displacement fields. The final "
+               "row is the panel that cannot be faked: fixed in magenta and moving in "
+               "green, before registration, after the global step and after the local "
+               "step. Green fringing along the right and lower edges before "
+               "registration collapses to a thin rim afterwards. The residual magenta "
+               "rim is genuine, because consecutive sections have slightly different "
+               "tissue outlines, and the pinkish interior reflects differing stain "
+               "intensity between sections rather than misalignment.", figdir)
+
+
+def f26_ed_benchmark(figdir):
+    return _ed("F26", "A2_benchmark_accuracy",
+               "Extended Data layout: accuracy against the published benchmark",
+               "Corresponding fiducial markers on adjacent sections, the four "
+               "laser-cut holes driven through the block before embedding, and the "
+               "normalised performance scatter in the convention of the published "
+               "figure: black diamonds unregistered, red squares this implementation, "
+               "grey circles the twelve other algorithm configurations evaluated on "
+               "this same dataset. Metrics are scaled so that higher is always better. "
+               "Root mean square error, Jaccard index and area change are shown for "
+               "the published methods only, as those were not recomputed here.", figdir)
+
+
+def f27_ed_z_resolution(figdir):
+    return _ed("F27", "A7_z_resolution",
+               "Extended Data layout: z-resolution validation",
+               "Pixel correlation along the z axis against within-section xy "
+               "correlation, which is the ceiling set by intact tissue, and the "
+               "composition error introduced by skipping sections. The published "
+               "claims, correlation above 95 percent to 20 um and error below 5 "
+               "percent to 12 um, are tested rather than assumed, and neither "
+               "reproduces on this material. They were established on pancreas with "
+               "260 sections; this is liver with 47, structure changes faster through "
+               "z, and the shortcut that justified processing one section in three "
+               "does not transfer. This is the reason the measurement is specified as "
+               "something to repeat per tissue.", figdir)
+
+
+def f28_ed_reconstruction(figdir):
+    return _ed("F28", "A10_3d_reconstruction",
+               "Extended Data layout: three-dimensional reconstruction",
+               "The reconstructed volume and its projections. The central plane, the "
+               "segmented vascular lumina summed through the whole block where a "
+               "coherent branching tree indicates successful registration, and the xz "
+               "plane, which is a view no individual section contains. Only one tissue "
+               "class is shown where the published figure shows ten, because "
+               "separating ten classes requires a trained multi-class segmentation "
+               "that does not exist for this material; the remaining class panels are "
+               "omitted rather than substituted.", figdir)
+
+
 # ==================================================== F22 provenance
 
 
@@ -1013,4 +1106,6 @@ ALL_FIGURES = [
     f15_acrobat_registration, f16_batch_audit, f17_usm_qc, f18_marker_quant,
     f19_her2_membrane, f20_ki67_hotspot, f21_ki67_spatial, f22_parameter_provenance,
     f23_stereological_correction, f24_published_benchmark,
+    f25_ed_registration_workflow, f26_ed_benchmark,
+    f27_ed_z_resolution, f28_ed_reconstruction,
 ]

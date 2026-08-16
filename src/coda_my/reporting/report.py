@@ -65,7 +65,7 @@ SOFTWARE: list[tuple[str, str, str]] = [
     ("python-igraph", "igraph", "Louvain community detection on the feature "
                                 "correlation graph"),
 
-    ("torch", "torch", "All neural network components: the CANVAS head, focal "
+    ("torch", "torch", "Neural network components, where used: the classifier head, focal "
                        "loss, weighted sampling, and the graph/2D-grid/3D-grid "
                        "context encoders"),
     ("torchvision", "torchvision", "ResNet-50 benchmark encoder and its own "
@@ -196,7 +196,7 @@ def _inject_software(sections, versions):
 
 
 def render_markdown(sections: list[Section], fig: dict, tab: dict, figures_dir: str) -> str:
-    lines = ["# CANVAS-BRCA / CANVAS-CTX: Analysis Report", ""]
+    lines = ["# CODA reproduction: 3D histology and breast IHC histomorphometry", ""]
     for sec in sections:
         lines.append(f"{'#' * (sec.level + 1)} {sec.heading}")
         lines.append("")
@@ -227,7 +227,7 @@ def render_markdown(sections: list[Section], fig: dict, tab: dict, figures_dir: 
 
 
 _HTML_HEAD = f"""<!doctype html><html><head><meta charset="utf-8">
-<title>CANVAS-BRCA / CANVAS-CTX Analysis Report</title>
+<title>CODA reproduction: 3D histology and breast IHC histomorphometry</title>
 <style>
 body {{ font-family: Calibri, 'Segoe UI', sans-serif; max-width: 960px; margin: 2rem auto;
        padding: 0 1.5rem; line-height: 1.55; color: #1a1a1a; }}
@@ -247,7 +247,7 @@ tr:nth-child(even) {{ background: #f4f7fa; }}
 code, pre {{ background: #f4f4f4; padding: 2px 5px; border-radius: 3px; }}
 pre {{ padding: 10px; overflow-x: auto; }}
 </style></head><body>
-<h1>CANVAS-BRCA / CANVAS-CTX: Analysis Report</h1>
+<h1>CODA reproduction: 3D histology and breast IHC histomorphometry</h1>
 """
 
 
@@ -350,7 +350,7 @@ def render_docx(sections: list[Section], fig: dict, tab: dict, out_path: str) ->
     style.font.name = "Calibri"
     style.font.size = Pt(11)
 
-    title = doc.add_heading("CANVAS-BRCA / CANVAS-CTX: Analysis Report", level=0)
+    title = doc.add_heading("CODA reproduction: 3D histology and breast IHC histomorphometry", level=0)
     for run in title.runs:
         run.font.color.rgb = navy
 

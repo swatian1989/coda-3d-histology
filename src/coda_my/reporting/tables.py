@@ -491,10 +491,67 @@ def t16_hole_straightness(tdir: str) -> dict:
                        "inter-observer distance, so detector and annotation validate "
                        "each other."}
 
+
+# ==================================================================== T17
+
+
+def t17_stereology(tdir: str) -> dict:
+    f = ROOT / "results/usm_stereology_3d_meta.json"
+    if not f.exists():
+        return _ph("T17", "Stereological corrections from single sections",
+                   "results/usm_stereology_3d_meta.json", "Arm C 3D", tdir,
+                   "T17_stereology")
+    m = json.loads(f.read_text())
+    rows = [
+        dict(quantity="nuclei measured", value=m["n_nuclei_measured"], units="count",
+             basis=f"{m['n_images']} highest-resolution images",
+             note="pooled across ER, PR and Ki67 fields"),
+        dict(quantity="mean 2D profile diameter", value=m["mean_2d_profile_diameter_um"],
+             units="um", basis="segmented nuclear areas",
+             note="what a section shows, NOT the nuclear diameter"),
+        dict(quantity="true diameter (Fullman)", value=m["true_diameter_fullman_um"],
+             units="um", basis="profile diameter x 4/pi",
+             note="a random plane rarely passes near a sphere's equator"),
+        dict(quantity="true diameter, truncation corrected",
+             value=m["true_diameter_truncation_corrected_um"], units="um",
+             basis="reweighted for profiles lost below the segmentation minimum",
+             note="opposing bias; the gap to the row above bounds the assumption"),
+        dict(quantity="section thickness", value=m["section_thickness_um"], units="um",
+             basis="confirmed cutting protocol",
+             note="densities scale linearly with this"),
+        dict(quantity="Abercrombie factor, previous",
+             value=m["abercrombie_factor_old"], units="ratio",
+             basis="computed with the profile diameter",
+             note="SUPERSEDED; inflated densities"),
+        dict(quantity="Abercrombie factor, corrected",
+             value=m["abercrombie_factor_corrected"], units="ratio",
+             basis="computed with the true diameter", note="current"),
+        dict(quantity="change in volumetric density",
+             value=m["density_change_percent"], units="percent",
+             basis="corrected against previous",
+             note="every density previously reported was this much too high"),
+    ]
+    df = pd.DataFrame(rows)
+    return {"id": "T17",
+            "title": "Stereological corrections recoverable without a volume",
+            "source": f"REAL (USM breast IHC, {m['n_nuclei_measured']:,} nuclei)",
+            "csv_path": _save(df, "T17_stereology", tdir), "df": df,
+            "caption": "Three-dimensional quantities that classical stereology "
+                       "recovers from single planes, with the assumption each rests "
+                       "on. The correction that matters most is the nuclear diameter: "
+                       "the Abercrombie count correction requires the true diameter, "
+                       "and using the profile diameter in its place understated "
+                       "nuclear size by 27 percent and inflated every volumetric "
+                       "density by 15 percent. Both opposing biases, the sphere "
+                       "geometry and the loss of small profiles to the segmentation "
+                       "minimum, are reported separately rather than folded into a "
+                       "single number."}
+
 ALL_TABLES = [
     t1_dataset_inventory, t2_locked_parameters, t3_deviations,
     t4_registration_accuracy, t5_z_skip, t6_cell_detection, t7_segmentation,
     t8_composition_density, t9_overcounting, t10_object_morphology,
     t11_usm_qc, t12_marker_results, t13_ki67_hotspot, t14_stage_applicability,
     t15_stereological_correction, t16_hole_straightness,
+    t17_stereology,
 ]
