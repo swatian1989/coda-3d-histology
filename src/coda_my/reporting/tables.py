@@ -39,6 +39,31 @@ def _cfg():
     return yaml.safe_load((ROOT / "config/coda_params.yaml").read_text())
 
 
+
+KART = ROOT / "results/kartasalo"
+KTAG = "ds16fix"   # corrected run; the original is kept as ds16
+
+
+def _k(name: str):
+    """Load a Kartasalo (Arm A) result table, or None if it has not run yet."""
+    f = KART / f"{name}_{KTAG}.csv"
+    return pd.read_csv(f) if f.exists() else None
+
+
+def _ksummary():
+    import json
+    f = KART / f"summary_{KTAG}.json"
+    return json.loads(f.read_text()) if f.exists() else None
+
+
+
+
+def _k3():
+    import json
+    f = KART / "stage6_summary.json"
+    return json.loads(f.read_text()) if f.exists() else None
+
+
 # ==================================================================== T1-T3
 
 
@@ -47,8 +72,8 @@ def t1_dataset_inventory(tdir: str) -> dict:
         dict(dataset="Kartasalo mouse prostate", n="260 serial sections", species="mouse",
              tissue="prostate", serial_depth="260 consecutive, 5 um",
              stages_supported="1-7 (only source of 3D)",
-             accession="RegBenchmark (software only); images require author request",
-             status="NOT ACQUIRED"),
+             accession="Etsin c76335fa-cdcf-4ddc-ab1c-1882bad82861 (urn.fi/urn:nbn:fi:csc-kata20170705131652639702), CC BY 4.0, access type Open; one 63.79 GB zip, no HTTP range support",
+             status="NOT ACQUIRED (prostate; liver retrieved instead)"),
         dict(dataset="Kartasalo mouse liver", n="47 serial sections", species="mouse",
              tissue="liver", serial_depth="47 consecutive",
              stages_supported="1-7, laser-cut holes as independent check",
@@ -112,13 +137,79 @@ def t3_deviations(tdir: str) -> dict:
 
 
 def t4_registration_accuracy(tdir):
-    return _ph("T4", "Registration accuracy vs the published benchmark",
-               "Kartasalo stack and fiducials", "Arm A stage 2", tdir, "T4_registration")
+    tre, atre, s = _k("step6_tre_pairwise"), _k("step6_atre"), _ksummary()
+    if tre is None or s is None:
+        return _ph("T4", "Registration accuracy vs the published benchmark",
+                   "Kartasalo stack and fiducials", "Arm A stage 2", tdir,
+                   "T4_registration")
+    hole = _k("step7_hole_straightness")
+    rows = [
+        dict(metric="pairwise TRE, mean", value=round(s.get("tre_full_mean_um", s.get("tre_rigid_mean_um", 0)), 1),
+             units="um", basis="4 operator fiducials, %d pairs" % len(tre),
+             note="FULL transform including elastic; the corrected driver returns the fields"),
+        dict(metric="pairwise TRE, median", value=round(s.get("tre_full_median_um", s.get("tre_rigid_median_um", 0)), 1),
+             units="um", basis="as above", note=""),
+        dict(metric="accumulated TRE, mean", value=round(s["atre_mean_um"], 1),
+             units="um", basis="relative to the centre section",
+             note="drift of the whole stack, not per-pair error"),
+        dict(metric="CONTROL: no transform applied at all",
+             value=round(s.get("identity_mean_um", float("nan")), 1), units="um",
+             basis="raw slide coordinates",
+             note="any registration that does not beat this is doing harm"),
+        dict(metric="original pipeline, before the fix",
+             value=round(s.get("original_pipeline_mean_um", float("nan")), 1), units="um",
+             basis="Radon rotation estimation, single scale",
+             note="worse than the control; cause was rotation estimation"),
+        dict(metric="RIGID FLOOR (Procrustes on the fiducials)",
+             value=round(s["rigid_floor_mean_um"], 1), units="um",
+             basis="transform fitted directly to the landmarks",
+             note="no rigid method can beat this; the remainder is tissue deformation"),
+        dict(metric="ANNOTATION FLOOR (inter-observer)",
+             value=round(s["interobserver_median_um"], 1), units="um",
+             basis="two independent observers, same holes",
+             note="differences below this are not resolvable by the ground truth"),
+        dict(metric="pixel correlation, median", value=round(s["correlation_median"], 4),
+             units="Spearman", basis="%d sections" % s["n_sections"],
+             note="%d flagged below the 0.30 acceptance threshold" % s["n_flagged"]),
+    ]
+    if s.get("hole_deviation_mean_um") is not None:
+        rows.append(dict(metric="hole straightness, mean deviation",
+                         value=round(s["hole_deviation_mean_um"], 1), units="um",
+                         basis="laser-cut holes detected de novo, %d tracked"
+                               % (len(hole) if hole is not None else 0),
+                         note="independent of the operator annotation"))
+    df = pd.DataFrame(rows)
+    return {"id": "T4", "title": "Registration accuracy for the serial liver stack",
+            "source": "REAL (Kartasalo liver, n=%d)" % s["n_sections"],
+            "csv_path": _save(df, "T4_registration", tdir), "df": df,
+            "caption": "Accuracy of the reconstruction, reported against the two floors "
+                       "that bound it rather than as a bare number. Pixel size %.2f um "
+                       "and section thickness %.0f um come from the source publication, "
+                       "not from file metadata: the TIFFs carry only a 72 dpi "
+                       "placeholder, so every distance here inherits that assumption."
+                       % (s["mpp_um"], s["section_thickness_um"])}
 
 
 def t5_z_skip(tdir):
-    return _ph("T5", "z-skip validation", "Kartasalo serial stack", "Arm A stage 2",
-               tdir, "T5_z_skip")
+    zs, s = _k("step8_zskip"), _ksummary()
+    if zs is None or s is None:
+        return _ph("T5", "z-skip validation", "Kartasalo serial stack", "Arm A stage 2",
+                   tdir, "T5_z_skip")
+    df = zs.copy()
+    df["within_5pc_tolerance"] = df["percent_composition_error"] <= 5.0
+    ok = df[df["within_5pc_tolerance"]]
+    max_skip = int(ok["skip"].max()) if len(ok) else 1
+    return {"id": "T5", "title": "z-skip validation on the serial liver stack",
+            "source": "REAL (Kartasalo liver, n=%d)" % s["n_sections"],
+            "csv_path": _save(df, "T5_z_skip", tdir), "df": df,
+            "caption": "Composition error introduced by processing only every Nth "
+                       "section. CODA reported under 5 percent up to a 12 um gap in "
+                       "pancreas and cut its workload by two thirds on that basis. On "
+                       "this liver stack the largest skip that stays inside the same 5 "
+                       "percent tolerance is %d, equal to %.0f um of spacing. The "
+                       "measurement has to be repeated per tissue because it depends on "
+                       "how fast structure changes through z."
+                       % (max_skip, max_skip * s["section_thickness_um"])}
 
 
 def t6_cell_detection(tdir):
@@ -139,14 +230,62 @@ def t8_composition_density(tdir):
 
 
 def t9_overcounting(tdir):
-    return _ph("T9", "Overcounting, 2D vs 3D per section",
-               "reconstructed volume with 3D connectivity", "Arm A stage 6",
-               tdir, "T9_overcounting")
+    s3 = _k3()
+    f = KART / "stage6_overcount_sensitivity.csv"
+    if s3 is None or not f.exists():
+        return _ph("T9", "Overcounting, 2D vs 3D per section",
+                   "reconstructed volume with 3D connectivity", "Arm A stage 6",
+                   tdir, "T9_overcounting")
+    df = pd.read_csv(f)
+    df["coda_pancreas_reference"] = s3["coda_pancreas_reference"]
+    return {"id": "T9", "title": "Two-dimensional versus three-dimensional object counts",
+            "source": "REAL (Kartasalo liver volume, n=%d sections)" % s3["n_sections"],
+            "csv_path": _save(df, "T9_overcounting", tdir), "df": df,
+            "caption": "The ratio of objects counted section by section to objects "
+                       "present in the volume, at a range of minimum object sizes. "
+                       "Reporting it as a curve rather than a number is deliberate: "
+                       "counting every detected feature gives a ratio near one because "
+                       "most features occupy a single section and cannot be "
+                       "double-counted, while restricting to substantial structures "
+                       "approaches the order reported for pancreas. Objects are vascular "
+                       "lumina segmented by intensity band, not the trained ten-class "
+                       "segmentation of the original method."}
 
 
 def t10_object_morphology(tdir):
-    return _ph("T10", "Per-object 3D morphology summary", "reconstructed volume",
-               "Arm A stage 6", tdir, "T10_morphology")
+    s3 = _k3()
+    f = KART / "stage6_3d_objects.csv"
+    if s3 is None or not f.exists():
+        return _ph("T10", "Per-object 3D morphology summary", "reconstructed volume",
+                   "Arm A stage 6", tdir, "T10_morphology")
+    obj = pd.read_csv(f)
+    q = obj["volume_um3"]
+    rows = [
+        dict(metric="3D objects in the volume", value=len(obj), units="count"),
+        dict(metric="object volume, median", value=round(float(q.median()), 1), units="um3"),
+        dict(metric="object volume, 95th percentile",
+             value=round(float(q.quantile(.95)), 1), units="um3"),
+        dict(metric="object volume, largest", value=round(float(q.max()), 1), units="um3"),
+        dict(metric="sections spanned, median",
+             value=float(obj["sections_spanned"].median()), units="sections"),
+        dict(metric="sections spanned, largest",
+             value=int(obj["sections_spanned"].max()), units="sections"),
+        dict(metric="objects confined to one section",
+             value=int((obj["sections_spanned"] == 1).sum()), units="count"),
+        dict(metric="lumen fraction of the volume",
+             value=round(100 * s3["lumen_volume_fraction"], 3), units="percent"),
+        dict(metric="voxel size", value=round(s3["voxel_um3"], 1), units="um3"),
+    ]
+    df = pd.DataFrame(rows)
+    return {"id": "T10", "title": "Per-object three-dimensional morphology",
+            "source": "REAL (Kartasalo liver volume, n=%d sections)" % s3["n_sections"],
+            "csv_path": _save(df, "T10_morphology", tdir), "df": df,
+            "caption": "Morphology measurable only once objects exist in three "
+                       "dimensions. The voxel is %.2f by %.2f microns in plane and %.0f "
+                       "microns deep, so it is close to isotropic here by coincidence of "
+                       "section thickness and working resolution; the volume is not "
+                       "resampled to force isotropy."
+                       % (s3["mpp_um"], s3["mpp_um"], s3["section_thickness_um"])}
 
 
 # ==================================================================== T11-T13 Arm C
@@ -272,9 +411,84 @@ def t14_stage_applicability(tdir: str) -> dict:
                        f"and a correlation number, and neither means anything."}
 
 
+# ==================================================================== T15
+
+
+def t15_stereological_correction(tdir: str) -> dict:
+    import json
+    p = ROOT / "results/usm_3d_extrapolation.csv"
+    mp = ROOT / "results/usm_3d_extrapolation_meta.json"
+    if not p.exists() or not mp.exists():
+        return _ph("T15", "2D to 3D stereological correction",
+                   "results/usm_3d_extrapolation.csv", "Arm C 3D",
+                   tdir, "T15_stereological")
+    ex = pd.read_csv(p)
+    meta = json.loads(mp.read_text())
+    T, D = meta["section_thickness_um_ASSUMED"], meta["measured_diameter_positive_um"]
+
+    rows = []
+    for m, g in ex.groupby("marker"):
+        rows.append({
+            "marker": m, "n_images": len(g),
+            "median_2d_density_per_mm2": round(g["density_2d_per_mm2"].median(), 1),
+            "median_3d_density_per_mm3": round(g["density_3d_per_mm3"].median(), 1),
+            "iqr_3d_density_per_mm3": (
+                f"{g['density_3d_per_mm3'].quantile(.25):.0f}-"
+                f"{g['density_3d_per_mm3'].quantile(.75):.0f}"),
+        })
+    df = pd.DataFrame(rows)
+    df["nuclear_diameter_um_MEASURED"] = round(D, 2)
+    df["section_thickness_um_ASSUMED"] = T
+    df["skipped_section_factor"] = meta["sections_skipped_factor"]
+    df["correction_factor"] = round(meta["correction_factor_positive"], 3)
+
+    infl = 100 * (T / (T + 4.20)) / meta["correction_factor_positive"] - 100
+    return {"id": "T15", "title": "Two-dimensional to three-dimensional count correction",
+            "source": f"REAL (USM IHC, n={len(ex)} images)",
+            "csv_path": _save(df, "T15_stereological", tdir), "df": df,
+            "caption": f"CODA's stereological correction C3D = C2D x k x T/(T+D) applied "
+                       f"to Arm C. Nuclear diameter D was measured in this cohort "
+                       f"({D:.2f} um from {meta['n_nuclei_measured']:,} segmented nuclei) "
+                       f"rather than inherited from the library's pancreas default of "
+                       f"4.20 um, which would have inflated volumetric densities by "
+                       f"{infl:.0f} percent. The skipped-section factor k is 1, not "
+                       f"CODA's 3, because these are single fields rather than every "
+                       f"third section of a series. Section thickness T is {T:.0f} um, the "
+                       f"confirmed cutting thickness for these blocks; volumetric "
+                       f"densities scale linearly with it. No volume was reconstructed "
+                       f"and none can be from single sections."}
+
+
+
+# ==================================================================== T16
+
+
+def t16_hole_straightness(tdir: str) -> dict:
+    hole, s = _k("step7_hole_straightness"), _ksummary()
+    if hole is None or s is None or not len(hole):
+        return _ph("T16", "Laser-cut hole straightness, annotation-independent check",
+                   "Kartasalo registered stack", "Arm A stage 2", tdir,
+                   "T16_hole_straightness")
+    df = hole.copy()
+    return {"id": "T16",
+            "title": "Laser-cut hole straightness: ground truth without annotation",
+            "source": "REAL (Kartasalo liver, n=%d)" % s["n_sections"],
+            "csv_path": _save(df, "T16_hole_straightness", tdir), "df": df,
+            "caption": "Four holes were cut through the block with a laser before "
+                       "embedding, so in a correct reconstruction each traces a straight "
+                       "line down z. They are detected here de novo by morphology, with "
+                       "no reference to the operator clicks, and the residual scatter "
+                       "about a fitted line is reconstruction error. This is the one "
+                       "accuracy measure in the study that cannot inherit annotation "
+                       "bias, because nothing human enters it. As a cross-check the same "
+                       "detector reproduces the operator positions to within the "
+                       "inter-observer distance, so detector and annotation validate "
+                       "each other."}
+
 ALL_TABLES = [
     t1_dataset_inventory, t2_locked_parameters, t3_deviations,
     t4_registration_accuracy, t5_z_skip, t6_cell_detection, t7_segmentation,
     t8_composition_density, t9_overcounting, t10_object_morphology,
     t11_usm_qc, t12_marker_results, t13_ki67_hotspot, t14_stage_applicability,
+    t15_stereological_correction, t16_hole_straightness,
 ]

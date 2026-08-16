@@ -3,11 +3,26 @@ data/interim/
 data/processed/
 figures/
 reports/
-results/*
-!results/tables/
 __pycache__/
 *.py[cod]
 .venv/
 venv/
 .pytest_cache/
 .ipynb_checkpoints/
+
+# local working notes, not part of the published project
+docs/_local_brief.md
+logs/
+*.out
+
+# Generated outputs are not published. This repository is code only:
+# every artefact below is reproduced by running the pipeline.
+results/
+manuscript/
+figures/
+reports/
+logs/
+*.out
+
+# Reference values transcribed from the published benchmark are INPUTS the
+# code needs, not outputs, so data/reference/ is deliberately kept.

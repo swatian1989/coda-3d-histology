@@ -1,6 +1,0 @@
-dataset,n,species,tissue,serial_depth,stages_supported,accession,status
-Kartasalo mouse prostate,260 serial sections,mouse,prostate,"260 consecutive, 5 um",1-7 (only source of 3D),RegBenchmark (software only); images require author request,NOT ACQUIRED
-Kartasalo mouse liver,47 serial sections,mouse,liver,47 consecutive,"1-7, laser-cut holes as independent check",as above,NOT ACQUIRED
-ACROBAT,"4,212 WSI / 1,153 patients",human,breast,"same block, NOT consecutive","1,2 (H&E to IHC), 3, 4, 7",researchdata.se 2022-190-1 (data use agreement),NOT ACQUIRED
-TCGA-BRCA,"~1,100 WSI",human,breast,"single sections, different blocks","3, 4, 7",GDC portal,NOT ACQUIRED
-USM breast IHC,234 field-of-view captures,human,breast,"single fields, no serial depth","marker quantification, HER2 membrane, spatial statistics",institutional (USM Kota Bharu),"ACQUIRED, analysed"

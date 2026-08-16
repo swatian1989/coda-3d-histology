@@ -38,9 +38,11 @@ FIG_MAP = {"F17": ("Figure 1", "Image quality control"),
            "F18": ("Figure 2", "Marker quantification"),
            "F19": ("Figure 2b", "HER2 membrane completeness"),
            "F20": ("Figure 3", "Ki67 hotspot versus average scoring"),
-           "F21": ("Figure 4", "Spatial arrangement of Ki67-positive nuclei")}
+           "F21": ("Figure 4", "Spatial arrangement of Ki67-positive nuclei"),
+           "F23": ("Figure 5", "Stereological correction of counts to volumetric density")}
 TAB_MAP = {"T11": "Supplementary Table S11", "T12": "Supplementary Table S12",
-           "T13": "Supplementary Table S13", "T14": "Supplementary Table S14"}
+           "T13": "Supplementary Table S13", "T14": "Supplementary Table S14",
+           "T15": "Supplementary Table S15"}
 
 
 def vancouver(r: dict, i: int) -> str:
@@ -203,11 +205,22 @@ def main() -> None:
     print(f"  5. 'Akbar Ali' correct, never reversed  : "
           f"{txt.count('Akbar Ali')} occurrences of 'Akbar Ali', "
           f"{txt.count('Ali Akbar')} of 'Ali Akbar'")
-    lim = "no three-dimensional analysis anywhere in this work" in txt.lower()
+    lim = "no three-dimensional reconstruction anywhere in this work" in txt.lower()
     mouse = "mouse prostate and liver" in txt.lower()
     fov = "field of view rather than whole slide" in txt.lower() or \
           "field-of-view" in txt.lower()
     print(f"  6. limitations state 3D/mouse/FOV       : 3D={lim}, mouse={mouse}, FOV={fov}")
+    # 7. the stereological correction must never be described as a reconstruction
+    recon = "not a reconstruction" in txt.lower() and "no volume was built" in txt.lower()
+    # Section thickness is now confirmed by the laboratory rather than assumed,
+    # so the check is that its provenance is stated and that the linear
+    # dependence is still disclosed, not that it is called an assumption.
+    thick = ("confirmed cutting protocol" in txt.lower()
+             or "confirmed for these blocks" in txt.lower())
+    scales = "scale linearly with it" in txt.lower() or "scales linearly with it" in txt.lower()
+    print(f"  7. 3D correction not oversold           : "
+          f"disclaimed={recon}, thickness-provenance-stated={thick}, "
+          f"linear-dependence-disclosed={scales}")
     print(f"  em-dashes in manuscript                 : {txt.count(chr(8212))}")
 
 

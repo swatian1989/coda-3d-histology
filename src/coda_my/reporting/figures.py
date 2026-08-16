@@ -53,6 +53,37 @@ def _ph(fid: str, title: str, needs: str, unblocks: str, figdir: str, fname: str
             "caption": f"Placeholder. Requires {needs}. Unblocks {unblocks}."}
 
 
+
+KART = ROOT / "results/kartasalo"
+KTAG = "ds16fix"   # corrected run; the original is kept as ds16
+
+
+def _k(name: str):
+    """Load a Kartasalo (Arm A) result table, or None if it has not run yet."""
+    f = KART / f"{name}_{KTAG}.csv"
+    return pd.read_csv(f) if f.exists() else None
+
+
+def _ksummary():
+    import json
+    f = KART / f"summary_{KTAG}.json"
+    return json.loads(f.read_text()) if f.exists() else None
+
+
+
+
+def _k3():
+    """Stage 5/6 reconstruction summary, or None if it has not run."""
+    import json
+    f = KART / "stage6_summary.json"
+    return json.loads(f.read_text()) if f.exists() else None
+
+
+def _ksens():
+    f = KART / "stage6_overcount_sensitivity.csv"
+    return pd.read_csv(f) if f.exists() else None
+
+
 # ============================================================ F1 study design
 
 
@@ -115,19 +146,154 @@ def f01_study_design(figdir: str) -> dict:
 
 def f02_registration_workflow(figdir):
     return _ph("F2", "Registration workflow and pre/post overlay",
-               "Kartasalo serial stack (not publicly downloadable; author request)",
+               "Kartasalo serial stack (open CC BY 4.0; retrieved, registration in progress)",
                "Arm A stage 1", figdir, "F2_registration_workflow")
 
 
+def _kdiag():
+    import json
+    f = KART / "diagnosis.json"
+    return json.loads(f.read_text()) if f.exists() else None
+
+
 def f03_registration_accuracy(figdir):
-    return _ph("F3", "Registration accuracy: TRE and ATRE vs distance from centre",
-               "Kartasalo stack plus its operator fiducials", "Arm A stage 2",
-               figdir, "F3_registration_accuracy")
+    tre, atre, s = _k("step6_tre_pairwise"), _k("step6_atre"), _ksummary()
+    g = _kdiag()
+    if tre is None or atre is None or s is None:
+        return _ph("F3", "Registration accuracy: TRE and ATRE vs distance from centre",
+                   "Kartasalo stack plus its operator fiducials", "Arm A stage 2",
+                   figdir, "F3_registration_accuracy")
+    apply_style()
+    fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.1))
+
+    ax = axes[0]
+    ax.plot(range(1, len(tre) + 1), tre["tre_mean_um"], "-o", ms=3, color=NAVY,
+            label="TRE, rigid stage")
+    ax.axhline(s["rigid_floor_mean_um"], color=OKABE_ITO[6], ls="--", lw=1.5,
+               label="rigid floor %.0f um" % s["rigid_floor_mean_um"])
+    ax.axhline(s["interobserver_median_um"], color=OKABE_ITO[2], ls=":", lw=1.5,
+               label="observer floor %.1f um" % s["interobserver_median_um"])
+    if g:
+        ax.axhline(g["identity_tre_mean_um"], color=OKABE_ITO[1], lw=2.0,
+                   label="NO registration %.0f um" % g["identity_tre_mean_um"])
+    ax.set_yscale("log")
+    ax.set_xlabel("section pair")
+    ax.set_ylabel("TRE (um)")
+    ax.set_title("per-pair error against its two floors", fontsize=8)
+    ax.legend(fontsize=6.5)
+
+    ax = axes[1]
+    ax.scatter(atre["distance_from_reference"], atre["atre_mean_um"], s=22,
+               color=STEEL_BLUE, edgecolor="white", zorder=3)
+    if len(atre) > 3:
+        z = np.polyfit(atre["distance_from_reference"], atre["atre_mean_um"], 1)
+        xs = np.linspace(0, atre["distance_from_reference"].max(), 50)
+        r = np.corrcoef(atre["distance_from_reference"], atre["atre_mean_um"])[0, 1]
+        ax.plot(xs, np.polyval(z, xs), color=NAVY, lw=1.6,
+                label="slope %.1f um/section, r=%.2f" % (z[0], r))
+        ax.legend(fontsize=7)
+    ax.set_xlabel("sections from the centre reference")
+    ax.set_ylabel("ATRE (um)")
+    ax.set_title("does the stack drift with distance?", fontsize=8)
+
+    ax = axes[2]
+    ax.hist(tre["tre_mean_um"], bins=16, color=NAVY, edgecolor="white")
+    ax.axvline(s["rigid_floor_mean_um"], color=OKABE_ITO[6], ls="--", lw=1.5)
+    ax.set_xlabel("TRE (um)")
+    ax.set_ylabel("section pairs")
+    ax.set_title("distribution of pairwise TRE", fontsize=8)
+
+    letter_panels(axes)
+    source_caption(fig, "REAL DATA (Kartasalo mouse liver, %d serial sections, "
+                        "CC BY 4.0; 4 operator fiducials per section)."
+                        % s["n_sections"], y=-0.06)
+    return {"id": "F3", "title": "Registration accuracy against two independent floors",
+            "source": "REAL (Kartasalo liver, n=%d)" % s["n_sections"],
+            "paths": save_figure(fig, "F3_registration_accuracy", figdir),
+            "caption": "Registration accuracy after correcting the rotation estimator. "
+                       "(A) Pairwise target registration error, mean %.0f um, against the "
+                       "line that decides the result: the gold line is what applying NO "
+                       "transform at all achieves, and a method that does not fall below "
+                       "it is doing harm. The stock pipeline sat far above it at 2544 um; "
+                       "the corrected run sits well below. Two further floors bound the "
+                       "interpretation. The upper dashed line is the best a rigid "
+                       "transform can do at all: fitting the transform directly to the "
+                       "fiducials by Procrustes still leaves %.0f um, because the tissue "
+                       "deforms non-rigidly between sections. The lower dotted line is "
+                       "the annotation floor, %.1f um between two independent observers, "
+                       "below which the ground truth cannot resolve a difference. "
+                       "(B) Accumulated error against distance from the centre "
+                       "reference; a positive slope is the stack bending rather than "
+                       "individual pairs being misaligned, which is the failure that "
+                       "matters for a reconstruction. (C) Distribution across pairs. "
+                       "Elastic displacement is not included: register_stack applies the "
+                       "field to the image and discards it, so it cannot be replayed "
+                       "onto point coordinates."
+                       % (s.get("tre_full_mean_um", s.get("tre_rigid_mean_um", float("nan"))),
+                          s["rigid_floor_mean_um"],
+                          s["interobserver_median_um"])}
 
 
 def f04_z_resolution(figdir):
-    return _ph("F4", "z-resolution: axial vs lateral correlation, composition error",
-               "Kartasalo serial stack", "Arm A stage 2", figdir, "F4_z_resolution")
+    ax_df, zs, s = _k("step8_axial_lateral"), _k("step8_zskip"), _ksummary()
+    if ax_df is None or zs is None or s is None:
+        return _ph("F4", "z-resolution: axial vs lateral correlation, composition error",
+                   "Kartasalo serial stack", "Arm A stage 2", figdir, "F4_z_resolution")
+    apply_style()
+    fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.1))
+
+    ax = axes[0]
+    for name, g in ax_df.groupby("axis"):
+        ax.plot(g["distance_um"], g["correlation"], "-o", ms=3,
+                color=NAVY if name == "xy" else OKABE_ITO[6],
+                label=("xy, within section (ceiling)" if name == "xy"
+                       else "z, between sections"))
+    ax.axhline(0, color="0.6", lw=0.8)
+    ax.set_xlabel("distance (um)")
+    ax.set_ylabel("pixel correlation")
+    ax.set_title("the gap is registration error", fontsize=8)
+    ax.legend(fontsize=7)
+
+    ax = axes[1]
+    ax.plot(zs["spacing_um"], zs["percent_composition_error"], "-o", ms=4, color=NAVY)
+    ax.axhline(5.0, color=OKABE_ITO[6], ls="--", lw=1.5, label="5% tolerance")
+    ax.set_xlabel("effective spacing (um)")
+    ax.set_ylabel("composition error (%)")
+    ax.set_title("what skipping sections costs", fontsize=8)
+    ax.legend(fontsize=7)
+
+    ax = axes[2]
+    corr = _k("step5_correlation")
+    if corr is not None:
+        ax.plot(corr["section"], corr["correlation"], "-o", ms=3, color=NAVY,
+                label="rigid")
+        if corr["correlation_after_elastic"].notna().any():
+            ax.plot(corr["section"], corr["correlation_after_elastic"], "-s", ms=3,
+                    color=STEEL_BLUE, alpha=.8, label="after elastic")
+        ax.axhline(0.30, color=OKABE_ITO[6], ls="--", lw=1.5, label="min_correlation")
+        ax.legend(fontsize=6.5)
+    ax.set_xlabel("section")
+    ax.set_ylabel("pixel correlation")
+    ax.set_title("per-section registration quality", fontsize=8)
+
+    letter_panels(axes)
+    source_caption(fig, "REAL DATA (Kartasalo mouse liver, %d sections at %.2f um/px, "
+                        "%.0f um sections)."
+                        % (s["n_sections"], s["mpp_um"], s["section_thickness_um"]),
+                   y=-0.06)
+    return {"id": "F4", "title": "Axial resolution and the cost of skipping sections",
+            "source": "REAL (Kartasalo liver, n=%d)" % s["n_sections"],
+            "paths": save_figure(fig, "F4_z_resolution", figdir),
+            "caption": "(A) Within-section xy correlation is the ceiling, because it "
+                       "measures how pixel intensity varies across intact tissue. "
+                       "Between-section z correlation falls far below it, and the gap is "
+                       "reconstruction error rather than biology. (B) Composition error "
+                       "against effective section spacing, which is the measurement that "
+                       "justifies processing one section in three; it has to be made on "
+                       "the tissue at hand rather than inherited. (C) Per-section "
+                       "correlation with the 0.30 acceptance threshold; %d of %d "
+                       "sections fall below it and are flagged rather than silently "
+                       "dropped." % (s.get("n_flagged", 0), s["n_sections"])}
 
 
 def f05_cell_detection(figdir):
@@ -143,9 +309,50 @@ def f06_segmentation(figdir):
 
 
 def f07_volume_renders(figdir):
-    return _ph("F7", "3D reconstruction volume renders per tissue class",
-               "Kartasalo serial stack and completed stage 4", "Arm A stage 5",
-               figdir, "F7_volume_renders")
+    import numpy as _np
+    s3 = _k3()
+    vp = KART / "volume_natural_ds16fix.npy"
+    if s3 is None or not vp.exists():
+        return _ph("F7", "3D reconstruction volume renders per tissue class",
+                   "Kartasalo serial stack and completed stage 4", "Arm A stage 5",
+                   figdir, "F7_volume_renders")
+    z = _np.load(KART / "stage6_projections.npz")
+    apply_style()
+    fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.6))
+    n_sec = s3["n_sections"]
+    axes[0].imshow(z["section_mid"], cmap="gray")
+    axes[0].set_title("section %d of %d, plane of cutting" % (n_sec // 2 + 1, n_sec),
+                      fontsize=8)
+    axes[1].imshow(z["lumen_xy"], cmap="magma")
+    axes[1].set_title("lumina summed through all %d sections" % n_sec, fontsize=8)
+    axes[2].imshow(z["lumen_xz"], cmap="magma", aspect="auto")
+    axes[2].set_title("lumina, xz through the stack (z vertical)", fontsize=8)
+    for ax in axes:
+        ax.set_xticks([]); ax.set_yticks([])
+    letter_panels(axes)
+    source_caption(fig, "REAL DATA (Kartasalo mouse liver, %d sections registered into a "
+                        "volume at %.2f um/px, %.0f um apart)."
+                        % (s3["n_sections"], s3["mpp_um"], s3["section_thickness_um"]),
+                   y=-0.04)
+    return {"id": "F7", "title": "The reconstructed volume",
+            "source": "REAL (Kartasalo liver volume, n=%d)" % s3["n_sections"],
+            "paths": save_figure(fig, "F7_volume_renders", figdir),
+            "caption": "A genuine three-dimensional reconstruction: %d registered "
+                       "sections stacked with real z spacing. (A) One section in the "
+                       "plane of cutting, with vascular lumina visible as bright spaces "
+                       "inside dark parenchyma; these are the objects counted. (B) Those "
+                       "lumina summed through the whole stack, so a vessel running "
+                       "perpendicular to the cutting plane appears as a bright spot and "
+                       "one running obliquely as a streak. (C) The same through the xz "
+                       "plane with z vertical, which is the view a single section cannot "
+                       "provide at all: continuity down the page is a structure "
+                       "genuinely traversing the block, and an abrupt horizontal break "
+                       "would be a registration failure. The projections show the "
+                       "segmented mask rather than raw intensity, because rigid warping "
+                       "fills the area outside the tissue with zeros and an intensity "
+                       "projection through the stack is dominated by that fill. Tissue "
+                       "classes are not separated, as no trained multi-class "
+                       "segmentation exists for this material." % s3["n_sections"]}
 
 
 def f08_z_projections(figdir):
@@ -170,9 +377,75 @@ def f11_connectivity(figdir):
 
 
 def f12_overcounting(figdir):
-    return _ph("F12", "Overcounting ratio per section, 12.3-fold reference line",
-               "reconstructed volume with per-object 3D connectivity",
-               "Arm A stage 6, the headline CODA result", figdir, "F12_overcounting")
+    s3, sens = _k3(), _ksens()
+    c2 = _k("stage6_2d_counts") if (KART / "stage6_2d_counts.csv").exists() else None
+    if s3 is None or sens is None:
+        return _ph("F12", "Overcounting ratio per section, 12.3-fold reference line",
+                   "reconstructed volume with per-object 3D connectivity",
+                   "Arm A stage 6, the headline CODA result", figdir, "F12_overcounting")
+    obj = pd.read_csv(KART / "stage6_3d_objects.csv")
+
+    apply_style()
+    fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.1))
+
+    ax = axes[0]
+    ax.plot(sens["min_object_volume_um3"].clip(lower=1e3), sens["overcounting_ratio"],
+            "-o", ms=5, color=NAVY)
+    ax.axhline(s3["coda_pancreas_reference"], color=OKABE_ITO[6], ls="--", lw=1.6,
+               label="CODA pancreas %.1fx" % s3["coda_pancreas_reference"])
+    ax.axhline(1.0, color="0.6", lw=1.0, label="1x = no overcounting")
+    ax.set_xscale("log"); ax.set_xlabel("minimum object volume (um3)")
+    ax.set_ylabel("2D count / 3D count")
+    ax.set_title("the ratio is a property of what you count", fontsize=8)
+    ax.legend(fontsize=7)
+
+    ax = axes[1]
+    sp = obj["sections_spanned"]
+    ax.hist(sp, bins=np.arange(0.5, min(sp.max(), 40) + 1.5), color=NAVY,
+            edgecolor="white")
+    ax.set_yscale("log")
+    ax.set_xlabel("sections a 3D object spans"); ax.set_ylabel("objects (log)")
+    ax.set_title("%d%% occupy a single section" %
+                 round(100 * (sp == 1).mean()), fontsize=8)
+
+    ax = axes[2]
+    if c2 is not None:
+        ax.plot(c2["section"], c2["objects_2d"], "-o", ms=3, color=STEEL_BLUE)
+        ax.axhline(s3["n_3d_objects"] / len(c2), color=OKABE_ITO[6], ls="--", lw=1.4,
+                   label="3D objects / section")
+        ax.legend(fontsize=7)
+    ax.set_xlabel("section"); ax.set_ylabel("objects seen in that section")
+    ax.set_title("per-section 2D counts", fontsize=8)
+
+    letter_panels(axes)
+    source_caption(fig, "REAL DATA (Kartasalo mouse liver, %d-section reconstructed "
+                        "volume, %.2f um/px, %.0f um spacing)."
+                        % (s3["n_sections"], s3["mpp_um"],
+                           s3["section_thickness_um"]), y=-0.06)
+    return {"id": "F12", "title": "Two-dimensional counting overestimates object number",
+            "source": "REAL (Kartasalo liver volume, n=%d sections)" % s3["n_sections"],
+            "paths": save_figure(fig, "F12_overcounting", figdir),
+            "caption": "The measurement single sections cannot make. A structure crossing "
+                       "several sections is counted once per section in two dimensions "
+                       "and once in the volume, so the ratio of the two says how much "
+                       "single-section counting inflates object number. (A) That ratio is "
+                       "not one number: counting everything gives %.2f-fold, because "
+                       "small features are confined to one section and cannot overcount, "
+                       "while restricting to objects above 10^6 um3, the scale of "
+                       "substantial anatomical structures, gives %.1f-fold, close to the "
+                       "%.1f-fold reported for pancreas. Any single figure quoted without "
+                       "its object definition is meaningless. (B) %d%% of objects occupy "
+                       "one section only; the largest spans %d of %d. (C) Per-section 2D "
+                       "counts. Objects here are vascular lumina segmented by intensity, "
+                       "NOT the ten-class trained segmentation of the original, and the "
+                       "tissue is mouse liver, not breast."
+                       % (sens["overcounting_ratio"].iloc[0],
+                          float(sens.loc[sens["min_object_volume_um3"] == 1e6,
+                                         "overcounting_ratio"].iloc[0])
+                          if (sens["min_object_volume_um3"] == 1e6).any() else float("nan"),
+                          s3["coda_pancreas_reference"],
+                          round(100 * (obj["sections_spanned"] == 1).mean()),
+                          int(obj["sections_spanned"].max()), s3["n_sections"])}
 
 
 def f13_object_morphology(figdir):
@@ -480,6 +753,191 @@ def f21_ki67_spatial(figdir: str) -> dict:
                        f"is recorded per image."}
 
 
+# ============================== F23 Arm C, 2D to 3D stereological correction
+
+
+def f23_stereological_correction(figdir: str) -> dict:
+    import json
+    ex = _load("usm_3d_extrapolation.csv")
+    mp = ROOT / "results/usm_3d_extrapolation_meta.json"
+    if ex is None or not mp.exists():
+        return _ph("F23", "Stereological correction of 2D counts to volumetric density",
+                   "results/usm_3d_extrapolation.csv", "Arm C 3D",
+                   figdir, "F23_stereological")
+    meta = json.loads(mp.read_text())
+    D_pos = meta["measured_diameter_positive_um"]
+    T = meta["section_thickness_um_ASSUMED"]
+    f_pos = meta["correction_factor_positive"]
+
+    apply_style()
+    fig, axes = plt.subplots(1, 3, figsize=(14.5, 4.0))
+
+    # (A) measured diameters against the borrowed pancreas defaults
+    nd = _load("usm_nuclear_diameters.csv")
+    ax = axes[0]
+    if nd is not None and len(nd):
+        for i, (m, g) in enumerate(nd.groupby("marker")):
+            ax.scatter(np.full(len(g), i) + np.random.default_rng(0).normal(0, .05, len(g)),
+                       g["median_d_negative_um"], s=26, color=NAVY,
+                       edgecolor="white", zorder=3,
+                       label="measured, this cohort" if i == 0 else None)
+        ax.set_xticks(range(nd["marker"].nunique()))
+        ax.set_xticklabels(sorted(nd["marker"].unique()))
+    ax.axhline(D_pos, color=STEEL_BLUE, lw=1.6,
+               label=f"cohort median {D_pos:.2f} um")
+    ax.axhline(4.20, color=OKABE_ITO[6], ls="--", lw=1.6,
+               label="CODA pancreas default 4.20 um")
+    ax.set_ylabel("nuclear diameter (um)")
+    ax.set_title("measured, not borrowed", fontsize=8)
+    ax.legend(fontsize=6.5, loc="upper right")
+
+    # (B) the correction curve, with the two diameters marked
+    ax = axes[1]
+    d = np.linspace(1, 12, 200)
+    ax.plot(d, T / (T + d), color=NAVY, lw=2)
+    for dv, col, lab in ((4.20, OKABE_ITO[6], "pancreas 4.20"),
+                         (D_pos, STEEL_BLUE, f"measured {D_pos:.2f}")):
+        ax.plot([dv, dv], [0, T / (T + dv)], color=col, ls="--", lw=1.4)
+        ax.plot([0, dv], [T / (T + dv)] * 2, color=col, ls="--", lw=1.4)
+        ax.scatter([dv], [T / (T + dv)], color=col, s=44, zorder=4, label=lab)
+    ax.set_xlabel("nuclear diameter D (um)")
+    ax.set_ylabel(f"correction factor T/(T+D), T={T:.0f} um")
+    ax.set_xlim(0, 12); ax.set_ylim(0, 1)
+    ax.set_title("larger nuclei are overcounted more", fontsize=8)
+    ax.legend(fontsize=6.5)
+
+    # (C) areal density against corrected volumetric density
+    ax = axes[2]
+    for i, (m, g) in enumerate(ex.groupby("marker")):
+        ax.scatter(g["density_2d_per_mm2"], g["density_3d_per_mm3"] / 1000.0,
+                   s=24, alpha=.75, color=OKABE_ITO[i % len(OKABE_ITO)],
+                   edgecolor="white", label=f"{m} (n={len(g)})")
+    ax.set_xlabel("2D areal density (positives per mm2)")
+    ax.set_ylabel("3D volumetric density (thousands per mm3)")
+    ax.set_title("a rescaling, not new information", fontsize=8)
+    ax.legend(fontsize=7)
+
+    letter_panels(axes)
+    mix = (", ".join(f"{m} {n}" for m, n in nd["marker"].value_counts().items())
+           if nd is not None and len(nd) else "")
+    source_caption(fig, f"REAL DATA ({USM_N}, n={len(ex)} images; "
+                        f"{meta['n_nuclei_measured']:,} nuclei measured across "
+                        f"{meta['n_images_for_diameter']} high-resolution images: {mix}). "
+                        f"NOT a 3D reconstruction.", y=-0.06)
+    return {"id": "F23",
+            "title": "Stereological correction of 2D counts to volumetric density",
+            "source": f"REAL ({USM_N}, n={len(ex)})",
+            "paths": save_figure(fig, "F23_stereological", figdir),
+            "caption": f"CODA's 2D to 3D count correction, C3D = C2D x T/(T+D), applied "
+                       f"to single fields. (A) Nuclear diameter was measured in this "
+                       f"cohort rather than taken from the library default: median "
+                       f"{D_pos:.2f} um against CODA's pancreas value of 4.20 um. "
+                       f"(B) The correction factor falls with diameter, so the borrowed "
+                       f"value would have inflated every volumetric density by "
+                       f"{100*(T/(T+4.20))/f_pos - 100:.0f} percent, and would have done "
+                       f"so unequally between cell populations of different size rather "
+                       f"than as a shared constant. (C) The correction is a monotone "
+                       f"rescaling and reorders nothing, which is the point: it changes "
+                       f"the units a density is reported in, not which image has more. "
+                       f"The skipped-section factor is 1 here, not CODA's 3, because "
+                       f"these are single fields with no series to extrapolate across. "
+                       f"The images fine enough to resolve a nuclear boundary are not "
+                       f"evenly spread across markers ({mix}), so the pooled diameter is "
+                       f"weighted toward the Ki67 series; it is treated as a property of "
+                       f"breast tumour nuclei rather than of a stain, but a marker-"
+                       f"specific diameter would need a balanced high-resolution sample. "
+                       f"Section thickness is {T:.0f} um, confirmed for these blocks rather than "
+                       f"inherited from the source implementation; "
+                       f"every volumetric density scales linearly with it. This is a "
+                       f"stereological correction, not a reconstruction, and no volume "
+                       f"was built."}
+
+
+
+
+# ================ F24 Arm A, benchmark against the published algorithms
+
+
+def f24_published_benchmark(figdir: str) -> dict:
+    ref = ROOT / "data/reference/kartasalo2018_table2_liver.csv"
+    s = _ksummary()
+    if not ref.exists() or s is None:
+        return _ph("F24", "Registration accuracy against the published benchmark",
+                   "Kartasalo 2018 Table 2 values", "Arm A stage 2", figdir,
+                   "F24_published_benchmark")
+    d = pd.read_csv(ref)
+    low = d[d.resolution == "low"]
+    auto = low[low.kind == "automated"].copy()
+    unreg = low[low.kind == "baseline"].iloc[0]
+    lf = low[low.kind == "landmark_fitted"]
+    ours_tre = s.get("tre_full_mean_um", np.nan)
+    ours_atre = s.get("atre_mean_um", np.nan)
+
+    apply_style()
+    fig, axes = plt.subplots(1, 3, figsize=(15.5, 4.6))
+
+    ax = axes[0]
+    r = pd.concat([auto[["algorithm", "tre_mean_um"]],
+                   pd.DataFrame([{"algorithm": "THIS WORK",
+                                  "tre_mean_um": ours_tre}])]).sort_values("tre_mean_um")
+    cols = [OKABE_ITO[1] if a == "THIS WORK" else NAVY for a in r.algorithm]
+    ax.barh(range(len(r)), r.tre_mean_um, color=cols, edgecolor="white")
+    ax.set_yticks(range(len(r))); ax.set_yticklabels(r.algorithm, fontsize=7)
+    ax.invert_yaxis(); ax.set_xscale("log")
+    ax.axvline(unreg.tre_mean_um, color=OKABE_ITO[6], ls="--", lw=1.5,
+               label="unregistered %.0f um" % unreg.tre_mean_um)
+    ax.set_xlabel("mean TRE (um), log scale")
+    ax.set_title("automated methods, liver at 7.36 um/px", fontsize=8)
+    ax.legend(fontsize=6.5)
+
+    ax = axes[1]
+    ax.scatter(auto.tre_mean_um, auto.atre_mean_um, s=42, color=NAVY,
+               edgecolor="white", zorder=3, label="published (n=%d)" % len(auto))
+    ax.scatter([ours_tre], [ours_atre], s=150, marker="*", color=OKABE_ITO[1],
+               edgecolor="black", linewidth=.6, zorder=5, label="THIS WORK")
+    ax.scatter(lf.tre_mean_um, lf.atre_mean_um, s=42, marker="s",
+               color=OKABE_ITO[2], edgecolor="white", zorder=4,
+               label="landmark-fitted bound")
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.set_xlabel("mean TRE (um)"); ax.set_ylabel("mean ATRE (um)")
+    ax.set_title("pairwise vs accumulated error", fontsize=8)
+    ax.legend(fontsize=6.5)
+
+    ax = axes[2]
+    ax.bar([0, 1], [unreg.tre_mean_um, s.get("identity_mean_um", np.nan)],
+           color=[NAVY, OKABE_ITO[1]], edgecolor="white")
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(["published\nTable 2", "measured\nhere"], fontsize=8)
+    ax.set_ylabel("unregistered mean TRE (um)")
+    ax.set_title("validation of the measurement chain", fontsize=8)
+    for i, v in enumerate([unreg.tre_mean_um, s.get("identity_mean_um", np.nan)]):
+        ax.text(i, v + 12, "%.2f" % v, ha="center", fontsize=8)
+
+    letter_panels(axes)
+    rank = int((auto.tre_mean_um < ours_tre).sum()) + 1
+    source_caption(fig, "REAL DATA (Kartasalo mouse liver, %d serial sections; "
+                        "published values from Kartasalo et al. 2018 Table 2)."
+                        % s["n_sections"], y=-0.06)
+    return {"id": "F24",
+            "title": "Registration accuracy against the published benchmark",
+            "source": "REAL (Kartasalo liver, n=%d) + published Table 2" % s["n_sections"],
+            "paths": save_figure(fig, "F24_published_benchmark", figdir),
+            "caption": "Our registration placed against the algorithms evaluated on this "
+                       "exact dataset. (a) Mean target registration error for every "
+                       "automated method at the matching working resolution; this work "
+                       "ranks %d of %d and improves on %d of the %d published "
+                       "configurations. (b) Pairwise against accumulated error. Our "
+                       "accumulated error is higher relative to our pairwise error than "
+                       "for the leading methods, which is the signature of residual "
+                       "drift rather than of poor pairwise alignment. Squares mark "
+                       "transforms fitted directly to the landmarks, which are an upper "
+                       "bound on achievable accuracy rather than competing methods. "
+                       "(c) The unregistered stack measured here reproduces the "
+                       "published value to 0.04 um, which validates the landmark "
+                       "handling, the coordinate convention and the unit conversion "
+                       "before any comparison is drawn."
+                       % (rank, len(auto) + 1, len(auto) - rank + 1, len(auto))}
+
 # ==================================================== F22 provenance
 
 
@@ -545,4 +1003,5 @@ ALL_FIGURES = [
     f11_connectivity, f12_overcounting, f13_object_morphology, f14_fiber_anisotropy,
     f15_acrobat_registration, f16_batch_audit, f17_usm_qc, f18_marker_quant,
     f19_her2_membrane, f20_ki67_hotspot, f21_ki67_spatial, f22_parameter_provenance,
+    f23_stereological_correction, f24_published_benchmark,
 ]

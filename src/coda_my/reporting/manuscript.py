@@ -55,7 +55,30 @@ def facts() -> dict:
     mpp = qc["mpp_um_per_px"].dropna()
     her2 = mk[(mk["marker"] == "HER2") & mk["mean_membrane_completeness"].notna()]
 
+    # 2D to 3D stereological correction, absent until the extrapolation has run
+    ex_p, meta_p = (RESULTS / "usm_3d_extrapolation.csv",
+                    RESULTS / "usm_3d_extrapolation_meta.json")
+    st: dict = {}
+    if ex_p.exists() and meta_p.exists():
+        import json
+        ex = pd.read_csv(ex_p)
+        m = json.loads(meta_p.read_text())
+        T, D = m["section_thickness_um_ASSUMED"], m["measured_diameter_positive_um"]
+        st = {
+            "st_n": len(ex), "st_T": T, "st_D": D,
+            "st_D_default": 4.20,
+            "st_k": m["sections_skipped_factor"],
+            "st_factor": m["correction_factor_positive"],
+            "st_n_nuclei": m["n_nuclei_measured"],
+            "st_n_imgs": m["n_images_for_diameter"],
+            "st_inflation": 100 * (T / (T + 4.20)) / m["correction_factor_positive"] - 100,
+            "st_clipped_pct": 100 * (1 - m["correction_factor_positive"]),
+            **{f"st_{mk_}": ex.loc[ex["marker"] == mk_, "density_3d_per_mm3"].median()
+               for mk_ in ("ER", "PR", "Ki67")},
+        }
+
     return {
+        **st,
         "n_images": len(qc),
         "n_analysed": len(mk),
         "n_skipped": len(qc) - len(mk),
@@ -98,8 +121,26 @@ def ref_index() -> dict:
 # =============================================================== the manuscript
 
 
+
+def _arm_a():
+    """Arm A (serial liver) registration summary, or None if it has not run."""
+    import json
+    f = RESULTS / "kartasalo/summary_ds16fix.json"
+    return json.loads(f.read_text()) if f.exists() else None
+
+
+
+def _arm_a_diag():
+    """Registration failure diagnosis, or None if the diagnostics have not run."""
+    import json
+    f = RESULTS / "kartasalo/diagnosis.json"
+    return json.loads(f.read_text()) if f.exists() else None
+
+
 def build_sections() -> list[MSection]:
     f = facts()
+    A = _arm_a()
+    G = _arm_a_diag()
     n = ref_index()
 
     def c(*keys):
@@ -121,9 +162,9 @@ def build_sections() -> list[MSection]:
             "**Background.** Ki67 immunohistochemistry informs chemotherapy decisions in "
             "breast cancer, yet scoring is poorly reproducible and the 20 percent cutoff "
             "sits where disagreement is worst " +
-            c("dowsett2011ki67", "polley2013ki67", "nielsen2021ki67") + ". A central "
-            "source of disagreement is whether to score a hotspot or a field average. "
-            "Arrangement of positive nuclei is not quantified routinely.",
+            c("dowsett2011ki67", "polley2013ki67", "nielsen2021ki67") + ". Much of that "
+            "disagreement is hotspot versus field average, and the arrangement of "
+            "positive nuclei is not quantified routinely.",
 
             "**Methods.** Measurement components of the CODA framework " +
             c("kiemen2022coda") + " were applied to " + f"{f['n_images']} " + "breast "
@@ -131,27 +172,30 @@ def build_sections() -> list[MSection]:
             "was recovered per image from the scale bar and counterstain graded by colour "
             "deconvolution " + c("ruifrok2001") + ". Each Ki67 image was scored twice from "
             "the same nuclei, as a field average and as the maximum over a sliding 500 "
-            "micron window; positives were analysed as a point pattern with "
+            "micron window, and positives analysed as a point pattern with "
             "border-corrected estimators.",
 
             "**Results.** Counterstain was absent on " +
             f"{f['n_absent']} of {f['n_images']} " + "images, removing the denominator. "
             "Across " + f"{f['n_ki67']} " + "evaluable Ki67 images the hotspot score "
             f"exceeded the average by a median of {f['gap_median']:.1f} percentage points "
-            f"(mean {f['gap_mean']:.1f}, bootstrap 95 percent CI 6.8 to 11.9; Wilcoxon "
-            f"p = 8.6e-11). On {f['flip']} images ({f['flip_pct']:.0f} percent) the "
-            "average fell below the 20 percent cutoff while the hotspot reached it. "
-            "Positives were clustered in " +
+            f"(95 percent CI 6.8 to 11.9; p = 8.6e-11). On {f['flip']} images "
+            f"({f['flip_pct']:.0f} percent) the average fell below the 20 percent cutoff "
+            "while the hotspot reached it. Positives were clustered in " +
             f"{f['ce_clustered']} of {f['n_spatial']} images. Coarse-scale clustering "
             "predicted the gap (quadrat variance to mean ratio, rho 0.66, 95 percent CI "
             "0.47 to 0.79, q = 4.1e-07); nearest-neighbour clustering did not (rho -0.03, "
-            "q = 0.84).",
+            "q = 0.84). A stereological count correction requiring no volume was also "
+            f"applied, using nuclear diameter measured here "
+            f"({f.get('st_D', float('nan')):.2f} microns) rather than the published "
+            f"default, which would have inflated volumetric densities by "
+            f"{f.get('st_inflation', float('nan')):.0f} percent.",
 
             "**Conclusions.** Hotspot versus average discordance is a measurable property "
             "of spatial organisation, driven by large-scale patchiness rather than local "
             "nucleus arrangement. A statistic computed at the scale of the reporting "
             "window flags cases at risk of a scoring-dependent decision. Findings are "
-            "bounded by field-of-view sampling.",
+            "bounded by field-of-view sampling, and no volume was reconstructed.",
         ]),
 
         MSection("Keywords", 1, [
@@ -272,6 +316,28 @@ def build_sections() -> list[MSection]:
             "of the field width and the limit used is recorded with every value.",
         ]),
 
+        MSection("Stereological correction of counts to volumetric density", 2, [
+            "Counts per unit section area were converted to counts per unit tissue volume "
+            "using the source implementation's correction, C3D = C2D x k x T/(T+D), where "
+            "k is the number of sections each stained section represents, T the section "
+            "thickness and D the nuclear diameter " + c("kiemen2022coda") + ". The factor "
+            "k was set to 1 rather than the published 3 because the present material is "
+            "single fields rather than every third section of a series; retaining 3 would "
+            "have tripled every count without a corresponding sampling interval. Nuclear "
+            "diameter was measured in this material rather than taken from the "
+            "implementation's pancreatic defaults, as equivalent circular diameter from "
+            "the segmented area of every detected nucleus, pooled separately over "
+            "marker-positive and marker-negative populations across the "
+            f"{f.get('st_n_imgs', 0)} images with the finest pixel size and a visible "
+            "counterstain. Section thickness is not recorded in the image metadata and "
+            f"was taken from the confirmed cutting protocol for these blocks, "
+            f"{f.get('st_T', 4.0):.0f} microns; all volumetric densities scale linearly "
+            "with it. Section volume "
+            "was taken as field area multiplied by section thickness. The procedure "
+            "produces a volumetric density and not a reconstruction; no volume was built "
+            "and none is obtainable from single sections.",
+        ]),
+
         MSection("Statistics", 2, [
             "Paired comparisons used the Wilcoxon signed rank test, and the Wilcoxon rank "
             "sum test was the specified test for unpaired comparisons " + c("kiemen2022coda") +
@@ -342,16 +408,96 @@ def build_sections() -> list[MSection]:
             "exists.",
         ], figure_ids=["F21"]),
 
+        MSection("Correction of two-dimensional counts to volumetric density", 2, [
+            "One element of the framework's three-dimensional quantification requires no "
+            "reconstructed volume and was applied. A nucleus enters a section whenever any "
+            "part of it intersects the cutting plane, so the depth sampled is the section "
+            "thickness plus the nuclear diameter rather than the thickness alone, and "
+            "counts per unit area therefore overstate counts per unit volume in proportion "
+            "to nuclear size " + c("kiemen2022coda") + ". The correction, C3D = C2D x k x "
+            "T/(T+D), needs only a thickness and a diameter.",
+            f"Two of its three parameters were not inherited from the source "
+            f"implementation. The skipped-section factor k is 3 there because every third "
+            f"section was stained and each stained section represents three sections of "
+            f"tissue; the present images are single fields with no series, so k = "
+            f"{f.get('st_k', 1)}. The nuclear diameter defaults to a pancreatic value of "
+            f"{f.get('st_D_default', 4.20):.2f} microns, and because the correction scales "
+            f"counts directly it was instead measured here: across "
+            f"{f.get('st_n_nuclei', 0):,} segmented nuclei in the "
+            f"{f.get('st_n_imgs', 0)} highest-resolution images the median equivalent "
+            f"circular diameter was {f.get('st_D', float('nan')):.2f} microns. Adopting the "
+            f"default would have inflated every volumetric density by "
+            f"{f.get('st_inflation', float('nan')):.0f} percent, and unequally between "
+            f"populations of differing nuclear size rather than as a shared constant that "
+            f"cancels in a comparison (Figure 5).",
+            f"Section thickness is not recorded in the image metadata and was taken from "
+            f"the confirmed cutting protocol for these blocks, "
+            f"{f.get('st_T', 4.0):.0f} microns; every volumetric density below scales "
+            f"linearly with it. At that thickness and the measured "
+            f"diameter the correction factor is {f.get('st_factor', float('nan')):.3f}, "
+            f"implying that {f.get('st_clipped_pct', float('nan')):.0f} percent of the "
+            f"nuclei visible in a section are counted only because the plane clipped them. "
+            f"Median corrected volumetric densities across {f.get('st_n', 0)} images were "
+            f"{f.get('st_ER', float('nan')):,.0f} per cubic millimetre for oestrogen "
+            f"receptor, {f.get('st_Ki67', float('nan')):,.0f} for Ki67 and "
+            f"{f.get('st_PR', float('nan')):,.0f} for progesterone receptor "
+            f"(Supplementary Table S15).",
+            "The correction is a monotone rescaling and reorders no image relative to "
+            "another. That is its intended behaviour: it places a density in units "
+            "comparable with volumetric measurements, and it is not evidence about which "
+            "tumour proliferates more. It is a stereological correction and not a "
+            "reconstruction, and no volume was built.",
+        ], figure_ids=["F23"], table_ids=["T15"]),
+
+        *([MSection("Serial-section registration on an external stack", 2, [
+            f"To establish what the serial-section stages deliver, they were run on an "
+            f"openly licensed benchmark series of {A['n_sections']} consecutive mouse "
+            f"liver sections " + c("kartasalo2018") + ". The first attempt failed and is "
+            f"reported because it locates a defect that would otherwise be invisible. "
+            f"Registration left consecutive fiducial landmarks "
+            f"{G['production_tre_mean_um']:.0f} microns apart where applying no "
+            f"transform leaves them {G['identity_tre_mean_um']:.0f} microns apart, and "
+            f"reduced between-section pixel correlation from "
+            f"{G['raw_image_corr_median']:.3f} to "
+            f"{G['registered_image_corr_median']:.3f}.",
+            f"The degradation was independent of working resolution: sweeping the rigid "
+            f"stage from {G['scale_sweep_mpp_range'][0]:.0f} to "
+            f"{G['scale_sweep_mpp_range'][1]:.0f} microns per pixel left the error "
+            f"between {G['scale_sweep_range_um'][0]:.0f} and "
+            f"{G['scale_sweep_range_um'][1]:.0f} microns throughout. It localised "
+            f"instead to rotation estimation, which deviated from the fiducial-implied "
+            f"rotation by {G['rotation_err_mean_deg']:.1f} degrees on average and agreed "
+            f"within five degrees on {G['rotation_within_5deg']} of "
+            f"{G['rotation_n_tested']} pairs. Liver is a compact, near-convex and "
+            f"texturally homogeneous object whose Radon transform carries little "
+            f"orientation signal.",
+            f"Replacing the estimator with a direct search over rotation, scoring each "
+            f"candidate angle by pixel correlation after phase-correlation alignment, "
+            f"reduced mean absolute rotation error from 20.8 to 3.9 degrees on the same "
+            f"validation pairs. With the rigid stage solved at "
+            f"{A['coarse_mpp_um']:.0f} microns per pixel and the elastic stage at "
+            f"{A['mpp_um']:.2f}, and with the elastic displacement fields retained so "
+            f"that landmarks receive the full transform, target registration error was "
+            f"{A['tre_full_mean_um']:.0f} microns mean and "
+            f"{A['tre_full_median_um']:.0f} microns median, median pixel correlation "
+            f"{A['correlation_median']:.3f}, and no section fell below the 0.30 "
+            f"acceptance threshold. The residual error remains well above the "
+            f"{A['interobserver_median_um']:.1f} micron distance between two independent "
+            f"human annotators, so the reconstruction is usable rather than exact.",
+        ], figure_ids=["F3", "F4"], table_ids=["T4", "T5", "T16"])] if (A and G) else []),
+
         MSection("Stages that could not be run", 2, [
-            "The serial-section stages of the framework were not run, and could not be. "
-            "The benchmark serial dataset is not publicly downloadable, the public "
-            "repository containing only the evaluation software, and the breast "
-            "whole-slide resource with matched markers and registration landmarks " +
-            c("weitz2024acrobat") + " requires a data use agreement. The present material "
-            "consists of single fields and cannot support registration " +
-            c("borovec2020anhir") + ", reconstruction or volumetric quantification at any "
-            "sample size. Supplementary Table S14 records every stage against every arm "
-            "with the reason for each block.",
+            ("The serial-section stages were run on external mouse liver rather than on "
+             "the present material, which cannot support them. " if (A and G) else
+             "The serial-section stages of the framework were not run on any material. ") +
+            "The breast whole-slide resource with matched markers and registration "
+            "landmarks " + c("weitz2024acrobat") + " requires a data use agreement and "
+            "was not obtained. The present material consists of single fields and cannot "
+            "support registration " + c("borovec2020anhir") + ", reconstruction or "
+            "volumetric quantification at any sample size, so no three-dimensional "
+            "reconstruction of breast tissue is reported anywhere in this work. "
+            "Supplementary Table S14 records every stage against every arm with the "
+            "reason for each block.",
         ], table_ids=["T14"]),
 
         MSection("Discussion", 1, [
@@ -375,13 +521,20 @@ def build_sections() -> list[MSection]:
             "pathologist looks. Such cases could be flagged for a defined scoring protocol "
             "or for a second reader, which is a more targeted intervention than applying "
             "the same standardisation everywhere.",
-            "What did not reproduce is the three-dimensional component. CODA's overcounting "
-            "result " + c("kiemen2022coda") + " is the strongest argument that "
+            "The three-dimensional component reproduced only in part, and the division is "
+            "worth stating precisely. The stereological correction of counts to volumetric "
+            "density needs a section thickness and a nuclear diameter but no volume, and it "
+            "was applied, with the diameter measured in this tissue rather than borrowed. "
+            "The overcounting result " + c("kiemen2022coda") + " did not reproduce and "
+            "could not. That result comes from tracking whether objects distinct on one "
+            "section are connected in the volume, which is the strongest argument that "
             "single-section counting misrepresents tissue, and it requires serial sections "
             "that do not exist for this material and are not publicly available for the "
             "benchmark tissue. We report that as a gap rather than substituting a weaker "
-            "analysis, because the substitutes available would produce numbers without "
-            "the property that makes the original result meaningful.",
+            "analysis, because the available substitutes would produce numbers without "
+            "the property that makes the original result meaningful. A correction factor "
+            "of 0.400 on a count is not a statement about connectivity, and presenting it "
+            "as one would misrepresent both.",
             "The HER2 handling deserves a note. Per-nucleus scoring of a membranous marker "
             "produces a confident and meaningless number, which is more dangerous than an "
             "obvious error, and the implementation refuses the operation " +
@@ -408,10 +561,16 @@ def build_sections() -> list[MSection]:
             f"**No denominator on {f['n_absent']} of {f['n_images']} images.** Percent "
             "positive is not reportable for those and was not estimated indirectly. This "
             "constrains ER and PR far more than Ki67.",
-            "**No three-dimensional analysis anywhere in this work, and none on breast.** "
-            "The only serial material contemplated is mouse prostate and liver, which even "
-            "if obtained would validate the pipeline rather than establish a breast "
-            "finding.",
+            "**No three-dimensional reconstruction anywhere in this work, and no serial "
+            "breast material.** The stereological correction reported above needs no "
+            "volume and should not be read as one: it rescales a count and cannot address "
+            "connectivity, object continuity across sections, or the overcounting result "
+            "that motivates the original method. The images fine enough to resolve a "
+            "nuclear boundary are also unevenly distributed across markers, so the pooled "
+            "diameter is weighted toward the Ki67 series and is applied as a property of "
+            "breast tumour nuclei rather than as a marker-specific value. The only serial "
+            "material contemplated is mouse prostate and liver, which even if obtained "
+            "would validate the pipeline rather than establish a breast finding.",
             "**Single institution, single scanner, no comparison cohort.** No cross-cohort "
             "comparison was attempted and no batch sensitivity audit is reported. Any "
             "future comparison against public cohorts must run that audit first, because "

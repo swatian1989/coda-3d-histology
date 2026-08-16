@@ -1,6 +1,6 @@
-# CLAUDE.md — coda-brca-my
+# the implementation.md — coda-brca-my
 
-Project instructions for Claude Code. Read fully before writing code.
+Project protocol. Read fully before writing code.
 
 ## What this is
 
